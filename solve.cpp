@@ -10,13 +10,19 @@ using namespace std;
 using Graph = vector<vector<int>>;
 
 int MAX_LEN = 1000;
+int TIME_LIMIT = 60;
 
+// 入力データ
 int N, M, K;
 vector<int> w;
 Graph edges;
+// 変数
 vector<int> v_group;
 vector<int> w_sum;
 int64_t current_score;
+// 焼きなましで使う変数
+double start_temp = 50000;
+double end_temp = 10;
 
 void input() {
     cin >> N >> M >> K;
@@ -50,7 +56,7 @@ void output_score() {
     cout << "score: " << current_score << endl;
 }
 
-int64_t calc_score(vector<int> weight) {
+int64_t calc_score(const vector<int> &weight) {
     int w_max = *max_element(weight.begin()+1, weight.end());
     int w_min = *min_element(weight.begin()+1, weight.end());
     int64_t score = ((int64_t)w_max * 10000 / w_min) - 10000;
@@ -134,7 +140,7 @@ auto select_random(const S &s, size_t n) {
     return it;
 }
 
-void single_change() {
+void single_change(const clock_t &start_time, const clock_t &now_time) {
     int change_v = rand()%N+1; // 変更するノード番号
     int before_group = v_group[change_v]; // 変更前のグループ
     set<int> group_candidate; // 変更後のグループ候補(隣接しているグループが入る)
@@ -159,16 +165,22 @@ void single_change() {
     vector<int> change_weight = w_sum;
     change_weight[before_group] -= w[change_v];
     change_weight[after_group] += w[change_v];
-    int64_t after_score = calc_score(change_weight);
-    if(after_score > current_score) { // スコアが悪化した場合
+    int64_t new_score = calc_score(change_weight);
+    
+    // 温度関数
+    double temp = start_temp + (end_temp - start_temp) * (double)(now_time-start_time)/CLOCKS_PER_SEC / TIME_LIMIT;
+    // 遷移確率関数
+    double prob = exp((current_score-new_score)/temp);
+
+    if(prob < (rand()%SHRT_MAX)/(double)SHRT_MAX) {
         v_group[change_v] = before_group;
         return;
-    } else { // 現状維持または改善した場合は，変更を保存する
-        if(after_score < current_score) {
-            debug(after_score);
+    } else {
+        if(new_score < current_score) {
+            //debug(new_score);
         }
         w_sum = change_weight;
-        current_score = after_score;
+        current_score = new_score;
     }
 }
 
@@ -176,11 +188,12 @@ int main() {
     input();
     init_sol();
     current_score = calc_score(w_sum);
-    clock_t start = clock();
-    while((double)(clock() - start) / CLOCKS_PER_SEC < 10) {
-        single_change();
+    clock_t start_time = clock();
+    clock_t now_time = clock();
+    while((double)(now_time - start_time) / CLOCKS_PER_SEC < TIME_LIMIT) {
+        single_change(start_time, now_time);
+        now_time = clock();
     }
     output_ans();
     output_score();
-
 }
