@@ -3,6 +3,7 @@
 #include <random>
 #include <set>
 #include <algorithm>
+#include <time.h>
 #define debug(x) cerr << #x << " : " << x << endl;
 
 using namespace std;
@@ -15,7 +16,7 @@ vector<int> w;
 Graph edges;
 vector<int> v_group;
 vector<int> w_sum;
-int current_score;
+int64_t current_score;
 
 void input() {
     cin >> N >> M >> K;
@@ -49,10 +50,10 @@ void output_score() {
     cout << "score: " << current_score << endl;
 }
 
-int calc_score(vector<int> weight) {
+int64_t calc_score(vector<int> weight) {
     int w_max = *max_element(weight.begin()+1, weight.end());
     int w_min = *min_element(weight.begin()+1, weight.end());
-    int score = (w_max * 10000 / w_min) - 10000;
+    int64_t score = ((int64_t)w_max * 10000 / w_min) - 10000;
     return score;
 }
 
@@ -158,7 +159,7 @@ void single_change() {
     vector<int> change_weight = w_sum;
     change_weight[before_group] -= w[change_v];
     change_weight[after_group] += w[change_v];
-    int after_score = calc_score(change_weight);
+    int64_t after_score = calc_score(change_weight);
     if(after_score > current_score) { // スコアが悪化した場合
         v_group[change_v] = before_group;
         return;
@@ -175,7 +176,8 @@ int main() {
     input();
     init_sol();
     current_score = calc_score(w_sum);
-    for(int i=0; i<10000000; i++) {
+    clock_t start = clock();
+    while((double)(clock() - start) / CLOCKS_PER_SEC < 10) {
         single_change();
     }
     output_ans();
