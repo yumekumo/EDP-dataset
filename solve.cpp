@@ -9,12 +9,11 @@
 using namespace std;
 using Graph = vector<vector<int>>;
 
-int MAX_LEN = 1000;
-int TIME_LIMIT = 60;
+int TIME_LIMIT = 10;
 
 // 入力データ
 int N, M, K;
-vector<int> w;
+vector<int> w, a, b;
 Graph edges;
 // 変数
 vector<int> v_group;
@@ -30,12 +29,13 @@ void input() {
     for(int i=1; i<=N; i++) {
         cin >> w[i];
     }
+    a.resize(M+1);
+    b.resize(M+1);
     edges.resize(N+1);
     for(int j=1; j<=M; j++) {
-        int a,b;
-        cin >> a >> b;
-        edges[a].push_back(b);
-        edges[b].push_back(a);
+        cin >> a[j] >> b[j];
+        edges[a[j]].push_back(b[j]);
+        edges[b[j]].push_back(a[j]);
     }
     v_group.resize(N+1);
     w_sum.resize(K+1);
@@ -52,6 +52,7 @@ void output_ans() {
         }
     }
 }
+
 void output_score() {
     cout << "score: " << current_score << endl;
 }
@@ -75,12 +76,11 @@ void dfs(vector<bool> &seen, const vector<Graph> &div_edges, int v, int k) {
 // 各部分グラフが全て連結か判定
 bool isconnected() {
     vector<Graph> div_edges(K+1, Graph(N+1));
-    for(int i=1; i<=N; i++) {
-        for(int l=0; l<edges[i].size(); l++) {
-            if(v_group[i] == v_group[edges[i][l]]) {
-                div_edges[v_group[i]][edges[i][l]].push_back(i);
-                div_edges[v_group[i]][i].push_back(edges[i][l]);
-            }
+    for(int j=1; j<=M; j++) {
+        int group_id = v_group[a[j]];
+        if(group_id == v_group[b[j]]) {
+            div_edges[group_id][a[j]].push_back(b[j]);
+            div_edges[group_id][b[j]].push_back(a[j]);
         }
     }
 
@@ -92,16 +92,16 @@ bool isconnected() {
                 start_v = i;
                 break;
             }
-            if(i==N) return false;
         }
+        if(start_v == -1) return false;
         dfs(seen, div_edges, start_v, k);
-    }
-    for(int i=1; i<=N; i++) {
-        if(seen[i]) continue;
-        else{
-            return false;
+        for(int i=1; i<=N; i++) {
+            if(v_group[i]==k && !seen[i]) {
+                return false;
+            }
         }
     }
+    //output_ans();
     return true;
 }
 
