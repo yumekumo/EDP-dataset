@@ -71,3 +71,5 @@ print('W_max:', w_max)
 print('W_min:', w_min)
 print('score:', score)
 print('---------------')
+for i in range(1, K+1):
+    print(f"{i}: {w_sum[i]}")

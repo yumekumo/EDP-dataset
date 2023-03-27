@@ -9,7 +9,8 @@
 using namespace std;
 using Graph = vector<vector<int>>;
 
-int TIME_LIMIT = 10;
+int TIME_ANN = 5;
+int TIME_LOC = 2;
 
 // 入力データ
 int N, M, K;
@@ -17,10 +18,11 @@ vector<int> w, a, b;
 Graph edges;
 // 変数
 vector<int> v_group;
+vector<int> v_group_cnt;
 vector<int> w_sum;
 int64_t current_score;
 // 焼きなましで使う変数
-double start_temp = 50000;
+double start_temp = 10000000;
 double end_temp = 10;
 
 void input() {
@@ -62,6 +64,13 @@ int64_t calc_score(const vector<int> &weight) {
     int w_min = *min_element(weight.begin()+1, weight.end());
     int64_t score = ((int64_t)w_max * 10000 / w_min) - 10000;
     return score;
+}
+
+void count_group() {
+    v_group_cnt.resize(K+1);
+    for(int i=1; i<=N; i++) {
+        v_group_cnt[v_group[i]]++;
+    }
 }
 
 void dfs(vector<bool> &seen, const vector<Graph> &div_edges, int v, int k) {
@@ -140,9 +149,83 @@ auto select_random(const S &s, size_t n) {
     return it;
 }
 
-void single_change(const clock_t &start_time, const clock_t &now_time) {
+void init_sol_bfs() {
+    //vector<int>
+}
+
+void annealing_chain(const clock_t &start_time, const clock_t &now_time) {
     int change_v = rand()%N+1; // 変更するノード番号
+    auto before_v_group = v_group;
     int before_group = v_group[change_v]; // 変更前のグループ
+    if(v_group_cnt[before_group]==1) return;
+    set<int> group_candidate; // 変更後のグループ候補(隣接しているグループが入る)
+    for(int l=0; l<edges[change_v].size(); l++) {
+        int tmp_group = v_group[edges[change_v][l]];
+        if(tmp_group != before_group) {
+            group_candidate.insert(tmp_group);
+        }
+    }
+    if(group_candidate.size() == 0) return;
+    auto r = rand() % group_candidate.size(); // not _really_ random
+    // ランダムで変更後のグループを選ぶ
+    auto after_group = *select_random(group_candidate, r);
+
+    set<int> change_v2_candidate;
+    for(int i=1; i<=N; i++) {
+        if(v_group[i]==before_group){
+            for(int l=0; l<edges[i].size(); l++) {
+                if(v_group[edges[i][l]]!=before_group && v_group_cnt[v_group[edges[i][l]]]!=1) {
+                    change_v2_candidate.insert(edges[i][l]);
+                }
+            }
+        }
+    }
+    if(change_v2_candidate.size()==0) return;
+    r = rand() % change_v2_candidate.size(); // not _really_ random
+    auto v2 = *select_random(change_v2_candidate, r);
+    int before_group_v2 = v_group[v2];
+
+    // 連結しているかの判定
+    v_group[change_v] = after_group; // グループの変更
+    v_group[v2] = before_group;
+    if(!isconnected()) { // 連結でないならば元に戻す
+        v_group = before_v_group;
+        return;
+    }
+    // 部分グラフの重みの再計算
+    vector<int> change_weight = w_sum;
+    change_weight[before_group] -= w[change_v];
+    change_weight[after_group] += w[change_v];
+    change_weight[before_group_v2] -= w[v2];
+    change_weight[before_group] += w[v2];
+    int64_t new_score = calc_score(change_weight);
+    
+    // 温度関数
+    double temp = start_temp + (end_temp - start_temp) * (double)(now_time-start_time)/CLOCKS_PER_SEC / TIME_ANN;
+    // 遷移確率関数
+    double prob = exp((current_score-new_score)/temp);
+
+    if(prob < (rand()%SHRT_MAX)/(double)SHRT_MAX) {
+        v_group = before_v_group;
+        return;
+    } else {
+        //debug(new_score);
+        w_sum = change_weight;
+        v_group_cnt[after_group]++;
+        v_group_cnt[before_group_v2]--;
+        current_score = new_score;
+    }
+}
+
+void annealing(const clock_t &start_time, const clock_t &now_time) {
+    int change_v;
+    if(rand()%4!=0) {
+        change_v = distance(w_sum.begin(), max_element(w_sum.begin(), w_sum.end()));
+    } else {
+        change_v = rand()%N+1; // 変更するノード番号
+    }
+    int before_group = v_group[change_v]; // 変更前のグループ
+    if(v_group_cnt[before_group]==1) return;
     set<int> group_candidate; // 変更後のグループ候補(隣接しているグループが入る)
     for(int l=0; l<edges[change_v].size(); l++) {
         int tmp_group = v_group[edges[change_v][l]];
@@ -168,7 +251,7 @@ void single_change(const clock_t &start_time, const clock_t &now_time) {
     int64_t new_score = calc_score(change_weight);
     
     // 温度関数
-    double temp = start_temp + (end_temp - start_temp) * (double)(now_time-start_time)/CLOCKS_PER_SEC / TIME_LIMIT;
+    double temp = start_temp + (end_temp - start_temp) * (double)(now_time-start_time)/CLOCKS_PER_SEC / TIME_ANN;
     // 遷移確率関数
     double prob = exp((current_score-new_score)/temp);
 
@@ -176,24 +259,138 @@ void single_change(const clock_t &start_time, const clock_t &now_time) {
         v_group[change_v] = before_group;
         return;
     } else {
-        if(new_score < current_score) {
-            //debug(new_score);
-        }
         w_sum = change_weight;
+        v_group_cnt[after_group]++;
+        v_group_cnt[before_group]--;
         current_score = new_score;
     }
 }
+
+void local_search() {
+    int change_v = rand()%N+1; // 変更するノード番号
+    int before_group = v_group[change_v]; // 変更前のグループ
+    set<int> group_candidate; // 変更後のグループ候補(隣接しているグループが入る)
+    for(int l=0; l<edges[change_v].size(); l++) {
+        int tmp_group = v_group[edges[change_v][l]];
+        if(tmp_group != before_group) {
+            group_candidate.insert(tmp_group);
+        }
+    }
+    if(group_candidate.size() == 0) return;
+    auto r = rand() % group_candidate.size(); // not _really_ random
+    // ランダムで変更後のグループを選ぶ
+    auto after_group = *select_random(group_candidate, r);
+
+    // 連結しているかの判定
+    v_group[change_v] = after_group; // グループの変更
+    if(!isconnected()) { // 連結でないならば元に戻す
+        v_group[change_v] = before_group;
+        return;
+    }
+    // 部分グラフの重みの再計算
+    vector<int> change_weight = w_sum;
+    change_weight[before_group] -= w[change_v];
+    change_weight[after_group] += w[change_v];
+    int64_t after_score = calc_score(change_weight);
+    if(after_score > current_score) { // スコアが悪化した場合
+        v_group[change_v] = before_group;
+        return;
+    } else { // 現状維持または改善した場合は，変更を保存する
+        w_sum = change_weight;
+        current_score = after_score;
+    }
+}
+
+void local_search2() {
+    int change_v = rand()%N+1; // 変更するノード番号
+    auto before_v_group = v_group;
+    int before_group = v_group[change_v]; // 変更前のグループ
+    if(v_group_cnt[before_group]==1) return;
+    set<int> group_candidate; // 変更後のグループ候補(隣接しているグループが入る)
+    for(int l=0; l<edges[change_v].size(); l++) {
+        int tmp_group = v_group[edges[change_v][l]];
+        if(tmp_group != before_group) {
+            group_candidate.insert(tmp_group);
+        }
+    }
+    if(group_candidate.size() == 0) return;
+    auto r = rand() % group_candidate.size(); // not _really_ random
+    // ランダムで変更後のグループを選ぶ
+    auto after_group = *select_random(group_candidate, r);
+
+    set<int> change_v2_candidate;
+    for(int i=1; i<=N; i++) {
+        if(v_group[i]==before_group){
+            for(int l=0; l<edges[i].size(); l++) {
+                if(v_group[edges[i][l]]!=before_group) {
+                    change_v2_candidate.insert(edges[i][l]);
+                }
+            }
+        }
+    }
+    if(change_v2_candidate.size()==0) return;
+    r = rand() % change_v2_candidate.size(); // not _really_ random
+    auto v2 = *select_random(change_v2_candidate, r);
+    int before_group_v2 = v_group[v2];
+
+    // 連結しているかの判定
+    v_group[change_v] = after_group; // グループの変更
+    v_group[v2] = before_group;
+    if(!isconnected()) { // 連結でないならば元に戻す
+        v_group = before_v_group;
+        return;
+    }
+    // 部分グラフの重みの再計算
+    vector<int> change_weight = w_sum;
+    change_weight[before_group] -= w[change_v];
+    change_weight[after_group] += w[change_v];
+    change_weight[before_group_v2] -= w[v2];
+    change_weight[before_group] += w[v2];
+    int64_t new_score = calc_score(change_weight);
+
+    if(new_score > current_score) {
+        v_group = before_v_group;
+        return;
+    } else {
+        w_sum = change_weight;
+        v_group_cnt[after_group]++;
+        v_group_cnt[before_group_v2]--;
+        current_score = new_score;
+    }
+
+}
+
+void output_v_group_cnt() {
+    for(int i=1; i<=K; i++) {
+        cout << i << " " << v_group_cnt[i] <<endl;
+    }
+}
+
 
 int main() {
     input();
     init_sol();
     current_score = calc_score(w_sum);
+    count_group();
     clock_t start_time = clock();
     clock_t now_time = clock();
-    while((double)(now_time - start_time) / CLOCKS_PER_SEC < TIME_LIMIT) {
-        single_change(start_time, now_time);
+    while((double)(now_time - start_time) / CLOCKS_PER_SEC < TIME_ANN) {
+        if((double)(now_time - start_time) / CLOCKS_PER_SEC > 0.1 && rand()%3==0) {
+            annealing_chain(start_time, now_time);
+        } else {
+            annealing(start_time, now_time);
+        }
+        now_time = clock();
+    }
+    while((double)(now_time - start_time) / CLOCKS_PER_SEC < TIME_ANN + TIME_LOC) {
+        if(rand()%2==0) {
+            local_search2();
+        } else {
+            local_search();
+        }
         now_time = clock();
     }
     output_ans();
     output_score();
+    output_v_group_cnt();
 }
